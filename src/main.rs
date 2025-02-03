@@ -4,6 +4,7 @@ mod state;
 use std::env;
 use std::sync::Arc;
 
+use dotenv::dotenv;
 use tokio::signal;
 use serenity::all::GuildId;
 use serenity::async_trait;
@@ -51,6 +52,8 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
+    let _ = dotenv().map_err(|err| println!("Can't find .env file!: {err:?}"));
+
     let token = env::var("PARSER_DISCORD_TOKEN").expect("Expected a token in the environment");
     let intents = GatewayIntents::non_privileged();
 
