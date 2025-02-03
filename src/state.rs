@@ -32,7 +32,7 @@ impl VoiceEventHandler for VoiceHandler {
                 const CHANNEL_SIZE: usize = 2; // 2 channel audio
                 const SAMPLE_LENGTH: usize = SAMPLE_RATE * DURATION_MS * CHANNEL_SIZE;
 
-                let num_speakers = tick.speaking.len() as i32;
+                let num_speakers = if tick.speaking.len() > 0 { tick.speaking.len() as i32 } else { 1 };
 
                 let mut voice_data = vec![0i32; SAMPLE_LENGTH];
                 
