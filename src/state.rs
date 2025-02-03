@@ -46,8 +46,6 @@ impl VoiceEventHandler for VoiceHandler {
                 const CHANNEL_SIZE: usize = 2; // 2 channel audio
                 const SAMPLE_LENGTH: usize = SAMPLE_RATE * DURATION_MS * CHANNEL_SIZE;
 
-                let num_speakers = if tick.speaking.len() > 0 { tick.speaking.len() as i32 } else { 1 };
-
                 let mut voice_data = vec![0i32; SAMPLE_LENGTH];
                 
                 for (_, data) in &tick.speaking {
@@ -58,14 +56,17 @@ impl VoiceEventHandler for VoiceHandler {
                 }
 
                 let transformed_data: Vec<u8> = voice_data.into_iter()
-                    .flat_map(|data| ((data / num_speakers) as i16).to_le_bytes())
+                    .flat_map(|data| {
+                        let divisor = data.abs() / i16::MAX as i32 + 1;
+                        ((data / divisor) as i16).to_le_bytes()
+                    })
                     .collect();
                 {
                     let mut file = self.file.lock().await;
                     let _ = file.write_all(&transformed_data);
                 }
             }
-            _ => { return None; },
+            _ => {},
         }
         None
     }
