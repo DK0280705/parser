@@ -1,18 +1,32 @@
-use std::{fs::File, io::Write, path::Path, sync::Arc};
+use std::{fs::{create_dir, File, OpenOptions}, io::Write, path::Path, sync::Arc};
 
 use dashmap::DashMap;
-use serenity::{all::GuildId, async_trait};
+use serenity::{all::{ChannelId, GuildId}, async_trait};
 use songbird::{Event, EventContext, EventHandler as VoiceEventHandler};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct VoiceHandler {
-    file: Arc<Mutex<File>>,
+    pub file: Arc<Mutex<File>>,
 }
 
 impl VoiceHandler {
-    pub fn new<P: AsRef<Path>>(filepath: P) -> Self {
-        let file = File::create(filepath).expect("Failed to create file");
+    pub fn new(channel_id: ChannelId) -> Self {
+        const PCM_DIR_PATH: &'static str = "pcm_dir";
+
+        let path = Path::new(PCM_DIR_PATH);
+        if !path.exists() && !path.is_dir() {
+            create_dir(PCM_DIR_PATH).expect("Failed to create file");
+        }
+    
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(format!("{PCM_DIR_PATH}/{channel_id}.pcm"))
+            .expect("Failed to create file");
+    
         Self {
             file: Arc::new(Mutex::new(file)),
         }
