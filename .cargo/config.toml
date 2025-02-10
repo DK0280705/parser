@@ -1,13 +1,11 @@
 [profile.debug]
 lto = true
 opt-level = "s"
-strip = true
 
 [profile.release]
 lto = true
-opt-level = 3
+opt-level = "s"
 strip = true
-codegen-units = 1
 
 [build]
 rustflags = ["-C", "target-cpu=native"]

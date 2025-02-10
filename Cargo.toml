@@ -8,9 +8,14 @@ members = [
     "parser-commands",
 ]
 
-[dependencies]
-dotenv = "0.15.0"
-libloading = "0.8.6"
+[workspace.dependencies]
 serenity = "0.12.4"
 songbird = { version = "0.4.6", features = ["receive"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "signal"] }
+
+[dependencies]
+serenity.workspace = true
+songbird.workspace = true
+tokio.workspace = true
+dotenv = "0.15.0"
+libloading = "0.8.6"
