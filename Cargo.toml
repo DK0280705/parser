@@ -3,10 +3,14 @@ name = "parser"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [
+    "parser-commands",
+]
+
 [dependencies]
-dashmap = "6.1.0"
 dotenv = "0.15.0"
-hound = "3.5.1"
+libloading = "0.8.6"
 serenity = "0.12.4"
 songbird = { version = "0.4.6", features = ["receive"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "signal"] }

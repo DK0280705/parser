@@ -1,6 +1,6 @@
 use serenity::all::{CommandInteraction, Context, CreateCommand};
 
-use crate::state::State;
+use crate::State;
 
 use super::reply;
 

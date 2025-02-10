@@ -1,4 +1,3 @@
-mod commands;
 mod state;
 
 use std::env;
@@ -11,14 +10,14 @@ use serenity::async_trait;
 use serenity::model::application::Interaction;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
-
 use songbird::{driver::DecodeMode, Config, SerenityInit};
+
 use state::State;
 
 const TEST_GUILD_ID: u64 = 1116375728343228438;
 
 struct Handler {
-    state: Arc<State>,
+    state: Arc<RwLock<State>>,
 }
 
 #[async_trait]
@@ -26,16 +25,18 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, _: Ready) {
         println!("Parser is ready!");
 
+        let ref command_manager = self.state.read().await.command_manager;
         let test_guild_id = GuildId::new(TEST_GUILD_ID);
         test_guild_id
-            .set_commands(&ctx.http, commands::create_all())
+            .set_commands(&ctx.http, command_manager.create_commands())
             .await
             .expect("Failed to register commands");
     }
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         match interaction {
             Interaction::Command(command) => {
-                commands::process_command(self.state.as_ref(), &ctx, &command)
+                let ref command_manager = self.state.read().await.command_manager;
+                command_manager.process_command(&ctx, &command)
                     .await
                     .err()
                     .map(|err| {
@@ -57,9 +58,11 @@ async fn main() {
     let token = env::var("PARSER_DISCORD_TOKEN").expect("Expected a token in the environment");
     let intents = GatewayIntents::non_privileged();
 
+    let state = State::new();
+
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler {
-            state: Arc::new(State::new()),
+            state: Arc::new(RwLock::new(state)),
         })
         .register_songbird_from_config(Config::default().decode_mode(DecodeMode::Decode))
         .await

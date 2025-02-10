@@ -1,85 +1,46 @@
-use std::{fs::{create_dir, File, OpenOptions}, io::Write, path::Path, sync::Arc};
+use std::sync::Arc;
+use libloading::{Library, Symbol};
+use serenity::{all::{CommandInteraction, Context, CreateCommand}, async_trait};
 
-use dashmap::DashMap;
-use serenity::{all::{ChannelId, GuildId}, async_trait};
-use songbird::{Event, EventContext, EventHandler as VoiceEventHandler};
-use tokio::sync::Mutex;
-
-#[derive(Clone)]
-pub struct VoiceHandler {
-    pub file: Arc<Mutex<File>>,
-}
-
-impl VoiceHandler {
-    pub fn new(channel_id: ChannelId) -> Self {
-        const PCM_DIR_PATH: &'static str = "pcm_dir";
-
-        let path = Path::new(PCM_DIR_PATH);
-        if !path.exists() && !path.is_dir() {
-            create_dir(PCM_DIR_PATH).expect("Failed to create file");
-        }
-    
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(format!("{PCM_DIR_PATH}/{channel_id}.pcm"))
-            .expect("Failed to create file");
-    
-        Self {
-            file: Arc::new(Mutex::new(file)),
-        }
-    }
-}
+#[cfg(target_os = "windows")]
+const LIB_EXT: &str = ".dll";
+#[cfg(target_os = "linux")]
+const LIB_EXT: &str = ".so";
 
 #[async_trait]
-impl VoiceEventHandler for VoiceHandler {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
-        match ctx {
-            EventContext::VoiceTick(tick) => {
-                // This verbosity is educational purpose.
-                // The length of the voice samples:
-                // num_samples = duration_s * sample_rate_Hz * num_channels
-                const SAMPLE_RATE: usize = 48; // kHz
-                const DURATION_MS: usize = 20; // voice data duration in ms
-                const CHANNEL_SIZE: usize = 2; // 2 channel audio
-                const SAMPLE_LENGTH: usize = SAMPLE_RATE * DURATION_MS * CHANNEL_SIZE;
+pub trait CommandManager: Sync + Send {
+    async fn process_command(&self, ctx: &Context, itr: &CommandInteraction) -> Result<(), serenity::Error>;
+    fn create_commands(&self) -> Vec<CreateCommand>;
+}
 
-                let mut voice_data = vec![0i32; SAMPLE_LENGTH];
-                
-                for (_, data) in &tick.speaking {
-                    let decoded_voice = data.decoded_voice.as_ref().unwrap();
-                    for (sample1, sample2) in voice_data.iter_mut().zip(decoded_voice.iter()) {
-                        *sample1 += *sample2 as i32;
-                    }
-                }
+type CommandManagerBuilder = fn() -> Box<dyn CommandManager>;
+struct CommandManagerPlugin {
+    library: Library,
+}
 
-                let transformed_data: Vec<u8> = voice_data.into_iter()
-                    .flat_map(|data| {
-                        let divisor = data.abs() / i16::MAX as i32 + 1;
-                        ((data / divisor) as i16).to_le_bytes()
-                    })
-                    .collect();
-                {
-                    let mut file = self.file.lock().await;
-                    let _ = file.write_all(&transformed_data);
-                }
-            }
-            _ => {},
+impl CommandManagerPlugin {
+    pub fn new() -> Self {
+        Self {
+            library: unsafe { Library::new(format!("parser_commands{}", LIB_EXT)).unwrap() }
         }
-        None
+    }
+    pub fn create(&self) -> Result<Box<dyn CommandManager>, libloading::Error> {
+        let create: Symbol<CommandManagerBuilder> = unsafe { self.library.get(b"create_command_manager")? };
+        Ok(create())
     }
 }
 
 pub struct State {
-    pub record_channels: DashMap<GuildId, VoiceHandler>,
+    pub command_manager: Arc<dyn CommandManager>,
+    _command_manager_plugin: CommandManagerPlugin,
 }
 
 impl State {
     pub fn new() -> Self {
+        let plugin = CommandManagerPlugin::new();
         Self {
-            record_channels: DashMap::new(),
+            command_manager: Arc::from(plugin.create().unwrap()),
+            _command_manager_plugin: plugin
         }
     }
 }
