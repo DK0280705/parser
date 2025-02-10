@@ -14,8 +14,6 @@ use songbird::{driver::DecodeMode, Config, SerenityInit};
 
 use state::State;
 
-const TEST_GUILD_ID: u64 = 1116375728343228438;
-
 struct Handler {
     state: Arc<RwLock<State>>,
 }
@@ -26,7 +24,7 @@ impl EventHandler for Handler {
         println!("Parser is ready!");
 
         let ref command_manager = self.state.read().await.command_manager;
-        let test_guild_id = GuildId::new(TEST_GUILD_ID);
+        let test_guild_id = GuildId::new(env::var("PARSER_TEST_GUILD_ID").unwrap().parse::<u64>().unwrap());
         test_guild_id
             .set_commands(&ctx.http, command_manager.create_commands())
             .await
@@ -53,9 +51,17 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
-    let _ = dotenv().map_err(|err| println!("Can't find .env file!: {err:?}"));
+    let _ = dotenv()
+        .map_err(|err| println!("Can't find .env file!: {err:?}, using available environment variables."));
 
-    let token = env::var("PARSER_DISCORD_TOKEN").expect("Expected a token in the environment");
+    let token = env::var("PARSER_DISCORD_TOKEN")
+        .expect("Expected a token in the environment");
+
+    let _ = env::var("PARSER_TEST_GUILD_ID")
+        .expect("Expected a discord server id to test")
+        .parse::<u64>()
+        .expect("Expected discord server id to be integer type");
+
     let intents = GatewayIntents::non_privileged();
 
     let state = State::new();
