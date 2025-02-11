@@ -1,14 +1,23 @@
-use std::{fs::{File, OpenOptions}, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path, sync::Arc};
+use std::{
+    fs::{File, OpenOptions},
+    io::{Cursor, Read, Seek, SeekFrom, Write},
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use hound::{WavSpec, WavWriter};
-use serenity::{all::{
-    ChannelId, ChannelType, CommandInteraction, CommandOptionType, Context, CreateAttachment, CreateCommand, CreateCommandOption, CreateInteractionResponse, CreateInteractionResponseMessage, ResolvedValue
-}, async_trait};
+use serenity::{
+    all::{
+        ChannelId, ChannelType, CommandInteraction, CommandOptionType, Context, CreateAttachment,
+        CreateCommand, CreateCommandOption, CreateInteractionResponse,
+        CreateInteractionResponseMessage, ResolvedValue,
+    },
+    async_trait,
+};
 use songbird::{CoreEvent, Event, EventContext, EventHandler as VoiceEventHandler};
-use tokio::sync::Mutex;
 
-use crate::State;
 use super::reply;
+use crate::State;
 
 #[derive(Clone)]
 pub struct VoiceHandler {
@@ -23,7 +32,7 @@ impl VoiceHandler {
         if !path.exists() && !path.is_dir() {
             std::fs::create_dir(PCM_DIR_PATH).expect("Failed to create file");
         }
-    
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -31,7 +40,7 @@ impl VoiceHandler {
             .truncate(true)
             .open(format!("{PCM_DIR_PATH}/{channel_id}.pcm"))
             .expect("Failed to create file");
-    
+
         Self {
             file: Arc::new(Mutex::new(file)),
         }
@@ -52,7 +61,7 @@ impl VoiceEventHandler for VoiceHandler {
                 const SAMPLE_LENGTH: usize = SAMPLE_RATE * DURATION_MS * CHANNEL_SIZE;
 
                 let mut voice_data = vec![0i32; SAMPLE_LENGTH];
-                
+
                 for (_, data) in &tick.speaking {
                     let decoded_voice = data.decoded_voice.as_ref().unwrap();
                     for (sample1, sample2) in voice_data.iter_mut().zip(decoded_voice.iter()) {
@@ -60,18 +69,19 @@ impl VoiceEventHandler for VoiceHandler {
                     }
                 }
 
-                let transformed_data: Vec<u8> = voice_data.into_iter()
+                let transformed_data: Vec<u8> = voice_data
+                    .into_iter()
                     .flat_map(|data| {
                         let divisor = data.abs() / i16::MAX as i32 + 1;
                         ((data / divisor) as i16).to_le_bytes()
                     })
                     .collect();
                 {
-                    let mut file = self.file.lock().await;
+                    let mut file = self.file.lock().unwrap();
                     let _ = file.write_all(&transformed_data);
                 }
             }
-            _ => {},
+            _ => {}
         }
         None
     }
@@ -84,10 +94,7 @@ pub async fn run(
 ) -> Result<(), serenity::Error> {
     let opts = itr.data.options();
     let first_opt = opts.first().unwrap();
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird voice client placed in at initialization")
-        .clone();
+    let ref manager = state.voice_manager;
 
     let guild_id = itr.guild_id.unwrap();
 
@@ -131,15 +138,17 @@ pub async fn run(
                 .expect("The songbird is doomed");
 
             let mut pcm_data: Vec<u8> = Vec::new();
-            
+
             let file_read_res = {
                 let voice_handler = state.record_channels.get(&guild_id).unwrap();
-                let mut pcm_file = voice_handler.file.lock().await;
-                pcm_file.seek(SeekFrom::Start(0)).expect("Can't even seek in a file");
+                let mut pcm_file = voice_handler.file.lock().unwrap();
+                pcm_file
+                    .seek(SeekFrom::Start(0))
+                    .expect("Can't even seek in a file");
                 pcm_file.read_to_end(&mut pcm_data)
             };
             state.record_channels.remove(&guild_id);
-            
+
             if let Err(err) = file_read_res {
                 eprintln!("Failed to read pcm data: {err:?}");
                 return reply(ctx, itr, "Failed to read recording file!").await;
@@ -147,20 +156,21 @@ pub async fn run(
 
             match create_wav(&pcm_data) {
                 Ok(wav_data) => {
-                    itr.create_response(&ctx.http,
+                    itr.create_response(
+                        &ctx.http,
                         CreateInteractionResponse::Message(
                             CreateInteractionResponseMessage::new()
                                 .content("Recording stopped")
-                                .add_file(CreateAttachment::bytes(wav_data, "Recording.wav"))
-                        )
-                    ).await
+                                .add_file(CreateAttachment::bytes(wav_data, "Recording.wav")),
+                        ),
+                    )
+                    .await
                 }
                 Err(err) => {
                     eprintln!("Failed to create wav file: {err}");
                     reply(ctx, itr, "Failed to create wav file!").await
                 }
             }
-            
         }
         _ => unreachable!("Ain't no way unless i'm dumb"),
     }
@@ -169,12 +179,15 @@ pub async fn run(
 fn create_wav(pcm_data: &Vec<u8>) -> Result<Vec<u8>, hound::Error> {
     let mut wav_data: Vec<u8> = Vec::new();
     {
-        let mut writer = WavWriter::new(Cursor::new(&mut wav_data), WavSpec {
-            channels: 2,
-            sample_rate: 48000,
-            bits_per_sample: 16,
-            sample_format: hound::SampleFormat::Int
-        })?;
+        let mut writer = WavWriter::new(
+            Cursor::new(&mut wav_data),
+            WavSpec {
+                channels: 2,
+                sample_rate: 48000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )?;
         for chunk in pcm_data.chunks_exact(2) {
             writer.write_sample(i16::from_le_bytes([chunk[0], chunk[1]]))?;
         }

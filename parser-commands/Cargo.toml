@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["dylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 dashmap = "6.1.0"
 hound = "3.5.1"
+parser = { version = "0.1.0", path = "../" }
 serenity.workspace = true
 songbird.workspace = true
 tokio.workspace = true

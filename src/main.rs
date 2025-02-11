@@ -4,13 +4,12 @@ use std::env;
 use std::sync::Arc;
 
 use dotenv::dotenv;
-use tokio::signal;
-use serenity::all::GuildId;
-use serenity::async_trait;
-use serenity::model::application::Interaction;
-use serenity::model::gateway::Ready;
-use serenity::prelude::*;
-use songbird::{driver::DecodeMode, Config, SerenityInit};
+
+use serenity::{
+    all::{Context, EventHandler, GatewayIntents, GuildId, Interaction, Ready},
+    async_trait, Client,
+};
+use tokio::{signal, sync::RwLock};
 
 use state::State;
 
@@ -24,7 +23,12 @@ impl EventHandler for Handler {
         println!("Parser is ready!");
 
         let ref command_manager = self.state.read().await.command_manager;
-        let test_guild_id = GuildId::new(env::var("PARSER_TEST_GUILD_ID").unwrap().parse::<u64>().unwrap());
+        let test_guild_id = GuildId::new(
+            env::var("PARSER_TEST_GUILD_ID")
+                .unwrap()
+                .parse::<u64>()
+                .unwrap(),
+        );
         test_guild_id
             .set_commands(&ctx.http, command_manager.create_commands())
             .await
@@ -34,7 +38,8 @@ impl EventHandler for Handler {
         match interaction {
             Interaction::Command(command) => {
                 let ref command_manager = self.state.read().await.command_manager;
-                command_manager.process_command(&ctx, &command)
+                command_manager
+                    .process_command(ctx.clone(), command.clone())
                     .await
                     .err()
                     .map(|err| {
@@ -51,11 +56,11 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
-    let _ = dotenv()
-        .map_err(|err| println!("Can't find .env file!: {err:?}, using available environment variables."));
+    let _ = dotenv().map_err(|err| {
+        println!("Can't find .env file!: {err:?}, using available environment variables.")
+    });
 
-    let token = env::var("PARSER_DISCORD_TOKEN")
-        .expect("Expected a token in the environment");
+    let token = env::var("PARSER_DISCORD_TOKEN").expect("Expected a token in the environment");
 
     let _ = env::var("PARSER_TEST_GUILD_ID")
         .expect("Expected a discord server id to test")
@@ -67,17 +72,19 @@ async fn main() {
     let state = State::new();
 
     let mut client = Client::builder(&token, intents)
+        .voice_manager_arc(state.voice_manager.clone())
         .event_handler(Handler {
             state: Arc::new(RwLock::new(state)),
         })
-        .register_songbird_from_config(Config::default().decode_mode(DecodeMode::Decode))
         .await
         .expect("Error creating client");
-    
+
     let shard_manager = client.shard_manager.clone();
 
     tokio::spawn(async move {
-        signal::ctrl_c().await.expect("Could not register ctrl+c handler");
+        signal::ctrl_c()
+            .await
+            .expect("Could not register ctrl+c handler");
         println!("Shutting down...");
         shard_manager.shutdown_all().await;
     });

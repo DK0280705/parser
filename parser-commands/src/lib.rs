@@ -1,31 +1,41 @@
-mod record;
 mod ping;
+mod record;
 
-use record::VoiceHandler;
+use std::sync::Arc;
+
 use dashmap::DashMap;
-use serenity::{all::{CommandInteraction, Context, CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage, GuildId}, async_trait};
+use parser::{CommandManager, CommandManagerCreateOption};
+use record::VoiceHandler;
+use serenity::{
+    all::{
+        CommandInteraction, Context, CreateCommand, CreateInteractionResponse,
+        CreateInteractionResponseMessage, GuildId,
+    },
+    async_trait,
+};
+use songbird::Songbird;
 
-pub (crate) struct State {
+pub(crate) struct State {
     pub record_channels: DashMap<GuildId, VoiceHandler>,
+    pub voice_manager: Arc<Songbird>,
 }
 
 impl State {
-    pub fn new() -> Self {
+    pub fn new(options: CommandManagerCreateOption) -> Self {
         State {
-            record_channels: DashMap::new()
+            record_channels: DashMap::new(),
+            voice_manager: options.voice_manager,
         }
     }
 }
 
 #[async_trait]
-pub trait CommandManager: Sync + Send {
-    async fn process_command(&self, ctx: &Context, itr: &CommandInteraction) -> Result<(), serenity::Error>;
-    fn create_commands(&self) -> Vec<CreateCommand>;
-}
-
-#[async_trait]
 impl CommandManager for State {
-    async fn process_command(&self, ctx: &Context, itr: &CommandInteraction) -> Result<(), serenity::Error> {
+    async fn process_command(
+        &self,
+        ctx: Context,
+        itr: CommandInteraction,
+    ) -> Result<(), serenity::Error> {
         match itr.data.name.as_str() {
             "ping" => ping::run(self, &ctx, &itr).await,
             "record" => record::run(self, &ctx, &itr).await,
@@ -61,6 +71,6 @@ async fn not_found_reply(
 }
 
 #[no_mangle]
-pub extern "Rust" fn create_command_manager() -> Box<dyn CommandManager> {
-    Box::new(State::new())
+pub extern "Rust" fn create_command_manager(options: CommandManagerCreateOption) -> Box<dyn CommandManager> {
+    Box::new(State::new(options))
 }

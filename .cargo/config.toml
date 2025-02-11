@@ -1,11 +1,7 @@
-[profile.debug]
-lto = true
-opt-level = "s"
-
 [profile.release]
 lto = true
 opt-level = "s"
 strip = true
 
 [build]
-rustflags = ["-C", "target-cpu=native"]
+rustflags = ["-C", "target-cpu=native", "-C", "prefer-dynamic"]
